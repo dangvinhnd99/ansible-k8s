@@ -215,11 +215,10 @@
   vars_files:
     vars/init-cluster.yaml
       
-
-
   tasks:
+
     - name: Init cluster
-      shell: kubeadm init --control-plane-endpoint={{lb_ip}}:6443 --upload-certs --pod-network-cidr=10.0.0.0/16
+      shell: kubeadm init --control-plane-endpoint={{ lb_ip }}:6443 --upload-certs --pod-network-cidr=10.0.0.0/16
       register: kubeadm_output
 
     - name: Ensure kubeadm-init.log exists
