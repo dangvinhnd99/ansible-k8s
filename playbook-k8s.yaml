@@ -1,11 +1,11 @@
 - name: install k8s
   hosts: test
   become: yes
-    # khong cos gi
+
   vars_files:
     - vars/install-k8s.yaml
 
-# test
+
   tasks:
     - name: update and upgrade apt packages
       apt:
@@ -293,5 +293,6 @@
         helm install cilium cilium/cilium --version 1.11.6 --namespace kube-system
       args:
         creates: /usr/share/keyrings/helm.gpg  
+
 
         
