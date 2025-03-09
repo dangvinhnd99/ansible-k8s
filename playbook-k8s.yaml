@@ -227,11 +227,6 @@
         state: touch
       when: kubeadm_output is failed
 
-    - name: Extract join command and write to /root/join_command.sh
-      shell: |
-        echo "{{ kubeadm_output.stdout_lines | select('search', '^kubeadm join') | list | join('\n') }}" > /root/join_command.sh
-      when: kubeadm_output.stdout_lines is defined
-
     - name: Print kubeadm token output line by line
       debug:
         var: item
@@ -290,14 +285,38 @@
 
 ################ join master node and worker node ##################
 
-- name: join master node and worker node
-  hosts: master
+- name: Join master node and worker node
+  hosts: test
   become: yes
-
   tasks:
-    - name: Init cluster
-    shell: kubeadm join 171.254.92.111:6443 --token qwb58t.nb9vgd473ovd7dsv \
-        --discovery-token-ca-cert-hash sha256:5fd79272ea23ed99f999939f6728146e2a04527c80718d906a5b3c4cfbd9592f \
-        --control-plane --certificate-key 3d1ddf7123fd0965a072fb06449a964950cddbd1facac5d4fb2470f3358116c6
+    - name: Init cluster - Generate join command and cert key
+      shell: |
+        mkdir -p /root/join-cluster
+        export CERT_KEY=$(kubeadm init phase upload-certs --upload-certs | grep -A1 'Using certificate key:' | tail -n1)
+        echo "$CERT_KEY" > /root/join-cluster/upload-cert.txt
 
-    register: kubeadm_output
+        export JOIN_TOKEN=$(kubeadm token create)
+        echo "$JOIN_TOKEN" > /root/join-cluster/token
+
+        export JOIN_CMD=$(kubeadm token create --print-join-command)
+        echo "$JOIN_CMD" > /root/join-cluster/join-worker.sh
+
+        chmod +x /root/join-cluster/join-worker.sh
+      register: kubeadm_output
+
+    - name: Check if kube config already exists
+      stat:
+        path: /root/.kube/config
+      register: kubeconfig_status
+
+    - name: Setup kube config for root user if not exists
+      shell: |
+        mkdir -p /root/.kube
+        cp -i /etc/kubernetes/admin.conf /root/.kube/config
+        chown root:root /root/.kube/config
+      when: not kubeconfig_status.stat.exists
+
+
+
+######### Cau hinh cluster######
+
