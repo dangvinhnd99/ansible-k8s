@@ -1,0 +1,43 @@
+- name: install nginxx
+  hosts: lb
+  become: yes
+  tasks:
+    - name: update and upgrade apt packages
+      apt:
+        update_cache: yes
+        upgrade: yes
+        cache_valid_time: 86400
+
+
+    - name: Update the repository cache and update package "nginx" to latest version using default release squeeze-backport
+      apt:
+        name: nginx
+        state: present
+        default_release: squeeze-backports
+        update_cache: yes
+
+    - name: Write nginx config settings
+      ansible.builtin.copy:
+        dest: /etc/nginx/nginx.conf
+        content: |
+          stream {
+              upstream kubernetes {
+                  server master-01:6443 max_fails=3 fail_timeout=30s;
+                  server master-02:6443 max_fails=3 fail_timeout=30s;
+                  server master-03:6443 max_fails=3 fail_timeout=30s;
+              }
+          server {
+                  listen 6443;
+                  listen 443;
+                  proxy_pass kubernetes;
+              }
+          }
+      notify: Reload sysctl
+
+  handlers:
+    - name: Reload nginx
+      shell: systemctl reload nginx  # Reload nginx để áp dụng config mới
+
+
+
+

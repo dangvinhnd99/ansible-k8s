@@ -1,0 +1,272 @@
+- name: install k8s
+  hosts: test
+  become: yes
+
+  vars_files:
+    - vars/install-k8s.yaml
+
+
+  tasks:
+    - name: update and upgrade apt packages
+      apt:
+        update_cache: yes
+        upgrade: yes
+        cache_valid_time: 86400
+
+    - name: Install kubelet, kubeadm and kubectl
+      shell: |
+        sudo mkdir -p /etc/apt/keyrings
+        curl -fsSL https://pkgs.k8s.io/core:/stable:/v{{ VER }}/deb/Release.key | sudo gpg --dearmor > /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+        echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v{{ VER }}/deb/ /" | sudo tee /etc/apt/sources.list.d/kubernetes.list
+      register: component_tool_k8s
+
+
+    - name: Print the tool versions
+      debug:
+        var: component_tool_k8s.stdout
+
+    - name: update and upgrade apt packages again
+      apt:
+        update_cache: yes
+        force_apt_get: yes
+        cache_valid_time: 0
+
+    - name: Verify repository is added
+      shell: apt-cache policy kubeadm kubectl kubelet
+      register: repo_check
+    - debug:
+        var: repo_check.stdout
+
+
+    - name: Install required packages
+      shell: |
+        sudo apt -y install vim git curl wget kubelet kubeadm kubectl
+        sudo apt-mark hold kubelet kubeadm kubectl
+      register: required_packages
+
+    - name: Print the required packages
+      debug:
+        var: required_packages.stdout
+
+    - name: Confirm installation by checking the version of kubectl.
+      shell: kubectl version --client && kubeadm version
+      register: kubectl_version
+
+    - name: Disable Swap
+      shell: sudo sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab
+      register: Disable_Swap
+    - name: Print the  Disable Swap
+      debug:
+        var: Disable_Swap.stdout
+
+    - name: Confirm setting is correct
+      shell: |
+        sudo swapoff -a
+        sudo mount -a
+        free -h
+      register: setting
+    - name: Print the setting 
+      debug:
+        var: setting.stdout
+
+
+    - name: Enable kernel modules and configure sysctl.
+      shell: |
+        sudo modprobe overlay
+        sudo modprobe br_netfilter
+      register: Disable_Swap
+    - name: Print the  Disable Swap
+      debug:
+        var: Disable_Swap.stdout
+
+    - name: Write Kubernetes sysctl settings
+      ansible.builtin.copy:
+        dest: /etc/sysctl.d/kubernetes.conf
+        content: |
+          net.bridge.bridge-nf-call-ip6tables = 1
+          net.bridge.bridge-nf-call-iptables = 1
+          net.ipv4.ip_forward = 1
+        mode: '0644'
+      notify: Reload sysctl
+      
+  handlers:
+    - name: Reload sysctl
+      shell: sysctl --system
+
+    - name: Install Container runtime
+      copy:
+        src: "{{ INSTALL_PATH }}/install-containerd.sh"
+        dest: /root/install-containerd.sh
+        owner: root
+        group: root
+        mode: u=rw,g=r,o=r
+
+    - name: Install Container runtime v2
+      shell: bash /root/install-containerd.sh | tee /tmp/install-containerd.log
+      register: container_runtimev2
+      changed_when: false
+
+    - name: Show installation log
+      debug:
+        var: container_runtimev2.stdout_lines
+
+
+####################   Install and configure containerd  ##################################################
+- name: Install and configure containerd
+  hosts: test
+  become: yes
+
+  tasks:
+    - name: Configure persistent loading of modules
+      copy:
+        dest: /etc/modules-load.d/containerd.conf
+        content: |
+          overlay
+          br_netfilter
+
+    - name: Load kernel modules at runtime
+      shell: |
+        modprobe overlay
+        modprobe br_netfilter
+
+    - name: Ensure sysctl params are set
+      copy:
+        dest: /etc/sysctl.d/kubernetes.conf
+        content: |
+          net.bridge.bridge-nf-call-ip6tables = 1
+          net.bridge.bridge-nf-call-iptables = 1
+          net.ipv4.ip_forward = 1
+
+    - name: Reload sysctl settings
+      command: sysctl --system
+
+    - name: Install required packages
+      apt:
+        name:
+          - curl
+          - gnupg2
+          - software-properties-common
+          - apt-transport-https
+          - ca-certificates
+        state: present
+        update_cache: yes
+
+    - name: Add Docker repository key
+      shell: curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+
+    - name: Add Docker APT repository
+      apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        state: present
+
+    - name: Update APT cache
+      apt:
+        update_cache: yes
+
+    - name: Install containerd
+      apt:
+        name: containerd.io
+        state: present
+
+
+    - name: Configure containerd
+      shell: |
+        mkdir -p /etc/containerd
+      args:
+        creates: /etc/containerd/config.toml
+
+    - name: Generate default containerd config
+      command: containerd config default
+      register: containerd_config
+      changed_when: false
+
+    - name: Write containerd config to file
+      copy:
+        dest: /etc/containerd/config.toml
+        content: "{{ containerd_config.stdout }}"
+
+
+    - name: Update SystemdCgroup to true in containerd config
+      replace:
+        path: /etc/containerd/config.toml
+        regexp: 'SystemdCgroup = false'
+        replace: 'SystemdCgroup = true'
+
+    - name: Restart and enable containerd service
+      systemd:
+        name: containerd
+        state: restarted
+        enabled: yes
+
+    - name: Check containerd service status
+      command: systemctl status containerd
+      register: containerd_status
+      changed_when: false
+
+    - name: Debug containerd status
+      debug:
+        var: containerd_status.stdout
+
+################ Init cluster ##################
+
+- name: Init cluster
+  hosts: master-01
+  become: yes
+  vars_files:
+    vars/init-cluster.yaml
+      
+
+
+  tasks:
+    - name: Init cluster
+      shell: kubeadm init --control-plane-endpoint={{lb_ip}}:6443 --upload-certs --pod-network-cidr=10.0.0.0/16
+      register: kubeadm_output
+
+    - name: Ensure kubeadm-init.log exists
+      file:
+        path: /tmp/kubeadm-init.log
+        state: touch
+      when: kubeadm_output is failed
+
+    - name: Extract join token and save to file
+      shell: |
+        grep -A 2 "kubeadm join" /tmp/kubeadm-init.log > /tmp/kubeadm-join-command.sh
+      register: token
+      args:
+        creates: /tmp/kubeadm-join-command.sh
+
+    - name: print token for join cluster
+      debug:
+        var: kubeadm_output.stdout
+
+
+      
+
+################ Install Helm ##################
+
+- name: Init cluster
+  hosts: master-01
+  become: yes
+
+  tasks:
+    - name: Add Helm GPG key
+      ansible.builtin.shell: |
+        curl -fsSL https://baltocdn.com/helm/signing.asc | gpg --dearmor -o /usr/share/keyrings/helm.gpg
+      args:
+        creates: /usr/share/keyrings/helm.gpg
+
+
+    - name: Install apt-transport-https
+      ansible.builtin.apt:
+        name: apt-transport-https
+        state: present   
+
+    - name: Add Helm repository
+      ansible.builtin.apt_repository:
+        repo: "deb [arch={{ ansible_architecture }} signed-by=/usr/share/keyrings/helm.gpg] https://baltocdn.com/helm/stable/debian/ all main"
+        filename: helm-stable-debian
+        state: present
+
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/helm.gpg] https://baltocdn.com/helm/stable/debian/ all main" | sudo tee /etc/apt/sources.list.d/helm-stable-debian.list
+sudo apt-get update
+sudo apt-get install helm
