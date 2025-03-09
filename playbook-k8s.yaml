@@ -228,7 +228,8 @@
       when: kubeadm_output is failed
 
     - name: Extract join token and save to file
-      shell: |
+      shell: | 
+        mkdir -p /tmp/kubeadm-join-command.sh
         grep -A 2 "kubeadm join" /tmp/kubeadm-init.log > /tmp/kubeadm-join-command.sh
       register: token
       args:
