@@ -227,24 +227,21 @@
         state: touch
       when: kubeadm_output is failed
 
-    - name: Extract join token and save to file
-      shell: | 
-        mkdir -p /tmp/kubeadm-join-command.sh
-        grep -A 2 "kubeadm join" /tmp/kubeadm-init.log > /tmp/kubeadm-join-command.sh
-      register: token
-      args:
-        creates: /tmp/kubeadm-join-command.sh
+    - name: Extract join command and write to /root/join_command.sh
+      shell: |
+        echo "{{ kubeadm_output.stdout_lines | select('search', '^kubeadm join') | list | join('\n') }}" > /root/join_command.sh
+      when: kubeadm_output.stdout_lines is defined
 
-    - name: print token for join cluster
+    - name: Print kubeadm token output line by line
       debug:
-        var: kubeadm_output.stdout
-
+        var: item
+      loop: "{{ kubeadm_output.stdout_lines }}"
 
       
 
 ################ Install Helm ##################
 
-- name: Init cluster
+- name: Install Helm
   hosts: master-01
   become: yes
 
@@ -260,10 +257,6 @@
       ansible.builtin.apt:
         name: apt-transport-https
         state: present   
-
-    - name: Set architecture variable
-      set_fact:
-        helm_arch: "{{ 'amd64' if ansible_architecture == 'x86_64' else ansible_architecture }}"
 
     - name: Add Helm repository
       ansible.builtin.apt_repository:
@@ -295,4 +288,16 @@
         creates: /usr/share/keyrings/helm.gpg  
 
 
-        
+################ join master node and worker node ##################
+
+- name: join master node and worker node
+  hosts: master
+  become: yes
+
+  tasks:
+    - name: Init cluster
+    shell: kubeadm join 171.254.92.111:6443 --token qwb58t.nb9vgd473ovd7dsv \
+        --discovery-token-ca-cert-hash sha256:5fd79272ea23ed99f999939f6728146e2a04527c80718d906a5b3c4cfbd9592f \
+        --control-plane --certificate-key 3d1ddf7123fd0965a072fb06449a964950cddbd1facac5d4fb2470f3358116c6
+
+    register: kubeadm_output
