@@ -238,6 +238,8 @@
 - name: Install Helm
   hosts: master-01
   become: yes
+  vars:
+    ansible_architecture: ""
 
   tasks:
     - name: Add Helm GPG key
@@ -254,7 +256,7 @@
 
     - name: Add Helm repository
       ansible.builtin.apt_repository:
-        repo: "deb [arch={{ ansible_architecture }} signed-by=/usr/share/keyrings/helm.gpg] https://baltocdn.com/helm/stable/debian/ all main"
+        repo: "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/helm.gpg] https://baltocdn.com/helm/stable/debian/ all main"
         filename: helm-stable-debian
         state: present
 
