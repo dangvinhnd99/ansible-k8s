@@ -238,22 +238,16 @@
 - name: Install Helm
   hosts: master-01
   become: yes
+  vars:
+    ansible_architecture: ""
 
   tasks:
-    - name: Remove malformed Helm repo file if exists
-      ansible.builtin.file:
-        path: /etc/apt/sources.list.d/helm-stable-debian.list
-        state: absent
-
-    - name: Gather architecture fact
-      ansible.builtin.setup:
-        filter: ansible_architecture
-
     - name: Add Helm GPG key
       ansible.builtin.shell: |
         curl -fsSL https://baltocdn.com/helm/signing.asc | gpg --dearmor -o /usr/share/keyrings/helm.gpg
       args:
         creates: /usr/share/keyrings/helm.gpg
+
 
     - name: Install apt-transport-https
       ansible.builtin.apt:
