@@ -1,5 +1,5 @@
-- name: install k8s
-  hosts: test
+- name: install tool kubelet, kubeadm, kubectl for cluster
+  hosts: master, worker
   become: yes
 
   vars_files:
@@ -113,7 +113,7 @@
 
 ####################   Install and configure containerd  ##################################################
 - name: Install and configure containerd
-  hosts: test
+  hosts: master, worker
   become: yes
 
   tasks:
@@ -286,7 +286,7 @@
 ################ join master node and worker node ##################
 
 - name: Join master node and worker node
-  hosts: test
+  hosts: master-01
   become: yes
   tasks:
     - name: Init cluster - Generate join command and cert key
