@@ -217,20 +217,9 @@
       
   tasks:
 
-    - name: Reset cluster if needed
-      shell: kubeadm reset -f
-      ignore_errors: true
-
-    - name: Remove etcd data if exists
-      shell: rm -rf /var/lib/etcd
-      ignore_errors: true
-
-    - name: Remove old manifests if exists
-      shell: rm -rf /etc/kubernetes/manifests/*
-      ignore_errors: true
-
     - name: Init cluster
       shell: kubeadm init --control-plane-endpoint={{ lb_ip }}:6443 --upload-certs --pod-network-cidr=10.0.0.0/16
+      when: not kubeadm_init_check.stat.exists
       register: kubeadm_output
 
     - name: Ensure kubeadm-init.log exists
