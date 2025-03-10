@@ -238,9 +238,6 @@
 - name: Install Helm
   hosts: master-01
   become: yes
-  vars:
-    ansible_architecture: ""
-
   tasks:
     - name: Add Helm GPG key
       ansible.builtin.shell: |
