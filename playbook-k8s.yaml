@@ -216,15 +216,8 @@
     vars/init-cluster.yaml
       
   tasks:
-
-    - name: Check if cluster is already initialized
-      stat:
-        path: /etc/kubernetes/admin.conf
-      register: kubeadm_init_check
-
     - name: Init cluster
-      shell: kubeadm init --control-plane-endpoint={{ lb_ip }}:6443 --upload-certs --pod-network-cidr=10.0.0.0/16
-      when: kubeadm_init_check.stat.exists is not defined or not kubeadm_init_check.stat.exists
+      shell: kubeadm init --control-plane-endpoint=lb-01:6443 --upload-certs --pod-network-cidr=10.0.0.0/16
       register: kubeadm_output
 
     - name: Ensure kubeadm-init.log exists
