@@ -207,6 +207,33 @@
       debug:
         var: containerd_status.stdout
 
+
+############# Initialize master node #############
+
+- name: Init master node
+  hosts: master
+  become: yes
+
+  tasks:
+    - name: Check if br_netfilter module is loaded
+      ansible.builtin.shell: lsmod | grep br_netfilter
+      register: br_netfilter_check
+      changed_when: false
+      failed_when: false
+
+    - name: Load br_netfilter module if not loaded
+      ansible.builtin.shell: modprobe br_netfilter
+      when: br_netfilter_check.stdout == ""
+
+    - name: Enable kubelet service
+      ansible.builtin.systemd:
+        name: kubelet
+        enabled: yes
+        state: started
+    - name: pull image
+      shell: sudo kubeadm config images pull
+
+
 ################ Init cluster ##################
 
 - name: Init cluster
@@ -275,46 +302,13 @@
   tasks:
     - name: Add repo of cilium
       ansible.builtin.shell: |
-        helm repo add cilium https://helm.cilium.io/
-        helm install cilium cilium/cilium --version 1.11.6 --namespace kube-system
+        helm repo add projectcalico https://docs.tigera.io/calico/charts
+        kubectl create namespace tigera-operator
+        helm install calico projectcalico/tigera-operator --version v3.29.3 --namespace tigera-operator
       args:
         creates: /usr/share/keyrings/helm.gpg  
 
 
-################ join master node and worker node ##################
-
-- name: Join master node and worker node
-  hosts: master-01
-  become: yes
-  tasks:
-    - name: Init cluster - Generate join command and cert key
-      shell: |
-        mkdir -p /root/join-cluster
-        export CERT_KEY=$(kubeadm init phase upload-certs --upload-certs | grep -A1 'Using certificate key:' | tail -n1)
-        echo "$CERT_KEY" > /root/join-cluster/upload-cert.txt
-
-        export JOIN_TOKEN=$(kubeadm token create)
-        echo "$JOIN_TOKEN" > /root/join-cluster/token
-
-        export JOIN_CMD=$(kubeadm token create --print-join-command)
-        echo "$JOIN_CMD" > /root/join-cluster/join-worker.sh
-
-        chmod +x /root/join-cluster/join-worker.sh
-      register: kubeadm_output
-
-    - name: Check if kube config already exists
-      stat:
-        path: /root/.kube/config
-      register: kubeconfig_status
-
-    - name: Setup kube config for root user if not exists
-      shell: |
-        mkdir -p /root/.kube
-        cp -i /etc/kubernetes/admin.conf /root/.kube/config
-        chown root:root /root/.kube/config
-      when: not kubeconfig_status.stat.exists
 
 
-
-######### Cau hinh cluster######
 
